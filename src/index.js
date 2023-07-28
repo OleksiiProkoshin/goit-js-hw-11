@@ -21,23 +21,36 @@ const options = {
 
 const observer = new IntersectionObserver(handlerPagination, options);
 
+let lastLoadedCount = 0;
+let reachedEndOfResults = false;
+
 function handlerPagination(entries, observer) {
 	entries.forEach(entry => {
-		if (entry.isIntersecting) {
+		if (entry.isIntersecting && !reachedEndOfResults) {
 			page += 1;
 			fetchPic(query, page, perPage)
-				.then(({data}) => {
-					markupGallery(data.hits);
-					lightbox.refresh();
-					console.log(gallery.children.length);
-					console.log(data.totalHits);
-					if (gallery.children.length >= data.totalHits) {
+				.then(({ data }) => {
+					const totalHits = data.totalHits;
+					const newImages = data.hits.length;
+					
+					if (newImages === 0) {
+                        reachedEndOfResults = true;
 						observer.unobserve(entry.target);
 						Notify.failure("We're sorry, but you've reached the end of search results.");
-						page = 1;
+					} else {
+						markupGallery(data.hits);
+						lightbox.refresh();
+						lastLoadedCount += newImages;
+						console.log(gallery.children.length);
+						console.log(totalHits);
+						if (lastLoadedCount >= totalHits) {
+                            reachedEndOfResults = true;
+							observer.unobserve(entry.target);
+							Notify.failure("We're sorry, but you've reached the end of search results.");
+						}
 					}
 				})
-				.catch(err => console.error(err))
+				.catch(err => console.error(err));
 		}
 	});
 }
@@ -51,22 +64,33 @@ function handleSearchForm(e) {
 		return;
 	}
 
-	fetchPic(query, page, perPage)
-		.then(({data}) => {
-			gallery.textContent = '';
-			if (data.totalHits === 0) {
-				Notify.failure('Sorry, there are no images matching your search. Please try again.');
-			} else {
-				Notify.success(`We found ${data.totalHits} images.`);
-				markupGallery(data.hits);
-				lightbox.refresh();
-				const cardHeight = gallery.firstElementChild.getBoundingClientRect().height;
-				window.scrollBy({top: cardHeight * 2, behavior: 'smooth'});
-				if (gallery.children.length < data.totalHits) {
-					observer.observe(guard);
-				}
-			}
-		})
+  gallery.textContent = '';
+  page = 1;
+  lastLoadedCount = 0;
+  reachedEndOfResults = false;
+
+	
+  fetchPic(query, page, perPage)
+    .then(({ data }) => {
+      const totalHits = data.totalHits;
+      const newImages = data.hits.length;
+
+      if (newImages === 0) {
+        Notify.failure('Sorry, there are no images matching your search. Please try again.');
+      } else {
+        Notify.success(`We found ${totalHits} images.`);
+        markupGallery(data.hits);
+        lightbox.refresh();
+        const cardHeight = gallery.firstElementChild.getBoundingClientRect().height;
+        window.scrollBy({ top: cardHeight * 2, behavior: 'smooth' });
+        if (lastLoadedCount < totalHits) {
+          observer.observe(guard);
+        } else {
+          reachedEndOfResults = true;
+          Notify.failure("We're sorry, but you've reached the end of search results.");
+        }
+      }
+    })
 		.catch(err => console.error(err))
 		.finally(() => e.target.reset());
 }
